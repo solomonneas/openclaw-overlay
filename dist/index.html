@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpenClaw Overlay</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: rgba(10, 10, 18, 0.88);
+      --surface: rgba(18, 18, 30, 0.95);
+      --border: rgba(255, 255, 255, 0.06);
+      --border-hover: rgba(255, 255, 255, 0.12);
+      --accent: #7c5cfc;
+      --accent-glow: rgba(124, 92, 252, 0.15);
+      --green: #2fd17f;
+      --yellow: #f0c04a;
+      --red: #ef4444;
+      --orange: #f97316;
+      --text: #e2e0ec;
+      --text-muted: #6b6889;
+      --text-dim: #4a4768;
+      --mono: 'JetBrains Mono', monospace;
+      --sans: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      background: transparent;
+      font-family: var(--sans);
+      color: var(--text);
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      padding: 0;
+    }
+
+    .overlay {
+      background: var(--bg);
+      backdrop-filter: blur(24px) saturate(1.4);
+      -webkit-backdrop-filter: blur(24px) saturate(1.4);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Draggable title bar — native drag via data-tauri-drag-region */
+    .titlebar {
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      flex-shrink: 0;
+      cursor: grab;
+    }
+
+    .titlebar:active {
+      cursor: grabbing;
+    }
+
+    .titlebar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .titlebar-logo {
+      font-size: 14px;
+    }
+
+    .titlebar-text {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .titlebar-controls {
+      display: flex;
+      gap: 4px;
+    }
+
+    .titlebar-btn {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      opacity: 0.5;
+      transition: opacity 150ms;
+    }
+
+    .titlebar-btn:hover { opacity: 1; }
+    .btn-minimize { background: var(--yellow); }
+    .btn-close { background: var(--red); }
+
+    /* Content area */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .content::-webkit-scrollbar { width: 4px; }
+    .content::-webkit-scrollbar-track { background: transparent; }
+    .content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 2px; }
+
+    /* Section headers */
+    .section-label {
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-dim);
+      padding-bottom: 4px;
+    }
+
+    /* Context window cards */
+    .session-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+      transition: border-color 150ms;
+    }
+
+    .session-card:hover { border-color: var(--border-hover); }
+
+    .session-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .session-name {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .session-model {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text-dim);
+      background: rgba(255,255,255,0.04);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .session-pct {
+      font-family: var(--mono);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .pct-low { color: var(--green); }
+    .pct-mid { color: var(--yellow); }
+    .pct-high { color: var(--orange); }
+    .pct-critical { color: var(--red); }
+
+    /* Progress bar */
+    .bar-track {
+      width: 100%;
+      height: 4px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 600ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms;
+    }
+
+    .bar-low { background: var(--green); box-shadow: 0 0 8px rgba(47, 209, 127, 0.3); }
+    .bar-mid { background: var(--yellow); box-shadow: 0 0 8px rgba(240, 192, 74, 0.3); }
+    .bar-high { background: var(--orange); box-shadow: 0 0 8px rgba(249, 115, 22, 0.3); }
+    .bar-critical { background: var(--red); box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
+
+    .session-meta {
+      display: flex;
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    .meta-item {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+
+    .meta-item span { color: var(--text-muted); }
+
+    /* Rate limits */
+    .limits-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 12px;
+    }
+
+    .limits-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+
+    .limits-title {
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .limits-provider {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--accent);
+      background: var(--accent-glow);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .limit-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+    }
+
+    .limit-row + .limit-row {
+      border-top: 1px solid rgba(255,255,255,0.03);
+    }
+
+    .limit-label {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+
+    .limit-value {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .limit-remaining { color: var(--green); }
+    .limit-warn { color: var(--yellow); }
+    .limit-danger { color: var(--red); }
+
+    .limit-reset {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text-dim);
+    }
+
+    /* Status indicator */
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .dot-online { background: var(--green); box-shadow: 0 0 6px rgba(47, 209, 127, 0.4); }
+    .dot-offline { background: var(--red); }
+
+    /* Footer */
+    .footer {
+      padding: 6px 12px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .footer-text {
+      font-family: var(--mono);
+      font-size: 9px;
+      color: var(--text-dim);
+    }
+
+    .refresh-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: 10px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--mono);
+      transition: all 150ms;
+    }
+
+    .refresh-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .spinning { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Empty state */
+    .empty {
+      text-align: center;
+      padding: 20px;
+      color: var(--text-dim);
+      font-size: 11px;
+    }
+
+    .pulse {
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="overlay">
+    <div class="titlebar" data-tauri-drag-region>
+      <div class="titlebar-left" data-tauri-drag-region>
+        <span class="titlebar-logo" data-tauri-drag-region>🦞</span>
+        <span class="titlebar-text" data-tauri-drag-region>OpenClaw</span>
+      </div>
+      <div class="titlebar-controls">
+        <!-- No data-tauri-drag-region here so clicks register on buttons -->
+        <button class="titlebar-btn btn-minimize" id="btn-min" title="Minimize"></button>
+        <button class="titlebar-btn btn-close" id="btn-close" title="Close"></button>
+      </div>
+    </div>
+
+    <div class="content" id="content">
+      <div class="empty pulse">Connecting to OpenClaw...</div>
+    </div>
+
+    <div class="footer">
+      <span class="footer-text" id="last-updated">--</span>
+      <button class="refresh-btn" id="btn-refresh" title="Refresh">↻ Refresh</button>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = 'http://localhost:8005';
+    const POLL_INTERVAL = 15000; // 15s
+    let pollTimer = null;
+
+    // Utility
+    function pctClass(pct) {
+      if (pct < 30) return 'low';
+      if (pct < 50) return 'mid';
+      if (pct < 75) return 'high';
+      return 'critical';
+    }
+
+    function formatTokens(n) {
+      if (!n && n !== 0) return '--';
+      if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+      return n.toString();
+    }
+
+    function timeAgo(dateStr) {
+      if (!dateStr) return '--';
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return mins + 'm ago';
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return hrs + 'h ago';
+      return Math.floor(hrs / 24) + 'd ago';
+    }
+
+    function renderSessionCard(s) {
+      const pct = s.contextPercent || 0;
+      const cls = pctClass(pct);
+      const modelShort = (s.model || '').split('/').pop().replace('claude-', '').replace('anthropic/', '');
+      return `
+        <div class="session-card">
+          <div class="session-top">
+            <div class="session-name">
+              <span class="status-dot dot-online"></span>
+              ${s.label || 'unknown'}
+              <span class="session-model">${modelShort}</span>
+            </div>
+            <span class="session-pct pct-${cls}">${pct}%</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill bar-${cls}" style="width: ${pct}%"></div>
+          </div>
+          <div class="session-meta">
+            <div class="meta-item"><span>used</span> ${formatTokens(s.tokensUsed)}</div>
+            <div class="meta-item"><span>max</span> ${formatTokens(s.tokensMax)}</div>
+            ${s.lastActivity ? `<div class="meta-item"><span>active</span> ${timeAgo(s.lastActivity)}</div>` : ''}
+            ${s.compactionCount ? `<div class="meta-item"><span>compacted</span> ${s.compactionCount}x</div>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSessions(sessions) {
+      if (!sessions || sessions.length === 0) {
+        return '<div class="empty">No active sessions</div>';
+      }
+
+      const main = sessions.filter(s => s.isMain);
+      const crons = sessions.filter(s => s.isCron);
+      const others = sessions.filter(s => !s.isMain && !s.isCron);
+
+      let html = '';
+
+      // Main sessions always visible
+      html += main.map(renderSessionCard).join('');
+
+      // Other agent sessions
+      if (others.length > 0) {
+        html += '<div class="section-label" style="margin-top:6px;">Agents</div>';
+        html += others.map(renderSessionCard).join('');
+      }
+
+      // Cron sessions collapsible
+      if (crons.length > 0) {
+        const activeCrons = crons.filter(s => s.contextPercent > 20);
+        html += `
+          <details class="cron-details">
+            <summary class="section-label" style="cursor:pointer;margin-top:6px;">
+              Cron Jobs (${crons.length}) ${activeCrons.length ? `· ${activeCrons.length} active` : ''}
+            </summary>
+            ${crons.map(renderSessionCard).join('')}
+          </details>
+        `;
+      }
+
+      return html;
+    }
+
+    function renderLimits(limits) {
+      if (!limits) return '';
+
+      const rows = [];
+
+      // Anthropic orange for bars
+      const anthropicOrange = '#D97706';
+
+      // Support nested format: { hourly: { percentLeft, resetIn }, weekly: { percentLeft, resetIn } }
+      const hourlyLeft = limits.hourly?.percentLeft ?? limits.hourlyPctLeft;
+      const weeklyLeft = limits.weekly?.percentLeft ?? limits.weeklyPctLeft;
+      const hourlyReset = limits.hourly?.resetIn ?? limits.hourlyReset;
+      const weeklyReset = limits.weekly?.resetIn ?? limits.weeklyReset;
+
+      if (hourlyLeft !== undefined) {
+        const used = 100 - hourlyLeft;
+        const cls = hourlyLeft > 50 ? 'limit-remaining' : hourlyLeft > 20 ? 'limit-warn' : 'limit-danger';
+        rows.push(`
+          <div class="limit-row" style="flex-wrap:wrap;">
+            <span class="limit-label">Hourly</span>
+            <span class="limit-value ${cls}">${hourlyLeft}% left</span>
+            ${hourlyReset ? `<span class="limit-reset">⏱ ${hourlyReset}</span>` : ''}
+            <div class="bar-track" style="width:100%;margin-top:4px;">
+              <div class="bar-fill" style="width:${used}%;background:${anthropicOrange};box-shadow:0 0 8px ${anthropicOrange}44;"></div>
+            </div>
+          </div>
+        `);
+      }
+      if (weeklyLeft !== undefined) {
+        const used = 100 - weeklyLeft;
+        const cls = weeklyLeft > 50 ? 'limit-remaining' : weeklyLeft > 20 ? 'limit-warn' : 'limit-danger';
+        rows.push(`
+          <div class="limit-row" style="flex-wrap:wrap;">
+            <span class="limit-label">Weekly</span>
+            <span class="limit-value ${cls}">${weeklyLeft}% left</span>
+            ${weeklyReset ? `<span class="limit-reset">⏱ ${weeklyReset}</span>` : ''}
+            <div class="bar-track" style="width:100%;margin-top:4px;">
+              <div class="bar-fill" style="width:${used}%;background:${anthropicOrange};box-shadow:0 0 8px ${anthropicOrange}44;"></div>
+            </div>
+          </div>
+        `);
+      }
+
+      if (rows.length === 0) return '';
+
+      return `
+        <div class="section-label">Rate Limits</div>
+        <div class="limits-card">
+          <div class="limits-header">
+            <span class="limits-title">Anthropic</span>
+            <span class="limits-provider" style="color:${anthropicOrange};background:${anthropicOrange}20;">Max $200/mo</span>
+          </div>
+          ${rows.join('')}
+        </div>
+      `;
+    }
+
+    function renderProviderUsage(sessions, codex24h) {
+      if (!sessions || sessions.length === 0) return '';
+
+      // Aggregate by provider
+      let anthropicTokens = 0;
+      let openaiTokens = 0;
+      let anthropicSessions = 0;
+      let openaiSessions = 0;
+
+      for (const s of sessions) {
+        const model = (s.model || '').toLowerCase();
+        const tokens = s.tokensUsed || 0;
+        if (model.includes('gpt') || model.includes('codex') || model.includes('openai') || model.includes('5.2') || model.includes('5.3')) {
+          openaiTokens += tokens;
+          openaiSessions++;
+        } else {
+          anthropicTokens += tokens;
+          anthropicSessions++;
+        }
+      }
+
+      // Add Codex CLI 24h data
+      const codexTotal = codex24h?.totalTokens || 0;
+      const codexSessions = codex24h?.sessions || 0;
+
+      return `
+        <div class="section-label" style="margin-top:6px;">Provider Usage</div>
+        <div class="limits-card">
+          <div class="limit-row">
+            <span class="limit-label">Anthropic (all)</span>
+            <span class="limit-value limit-remaining">${formatTokens(anthropicTokens)}</span>
+            <span class="limit-reset">${anthropicSessions} sessions</span>
+          </div>
+          <div class="limit-row">
+            <span class="limit-label">OpenAI via OC</span>
+            <span class="limit-value" style="color:#10b981;">${formatTokens(openaiTokens)}</span>
+            <span class="limit-reset">${openaiSessions} sessions</span>
+          </div>
+          <div class="limit-row" style="border-top:1px solid rgba(255,255,255,0.06);padding-top:6px;margin-top:2px;">
+            <span class="limit-label">Codex CLI (local)</span>
+            <span class="limit-value" style="color:#a78bfa;">${formatTokens(codexTotal)}</span>
+            <span class="limit-reset">${codexSessions} runs</span>
+          </div>
+          ${codex24h?.inputTokens ? `
+          <div class="limit-row">
+            <span class="limit-label" style="padding-left:8px;">↳ in / out</span>
+            <span class="limit-reset">${formatTokens(codex24h.inputTokens)} / ${formatTokens(codex24h.outputTokens)}</span>
+          </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    async function fetchData() {
+      const content = document.getElementById('content');
+      const lastUpdated = document.getElementById('last-updated');
+
+      try {
+        let data;
+        if (window.__TAURI__) {
+          const raw = await window.__TAURI__.core.invoke('fetch_overlay_status');
+          data = JSON.parse(raw);
+        } else {
+          const res = await fetch(`${API_BASE}/api/overlay/status`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          data = await res.json();
+        }
+
+        let html = '';
+
+        // Sessions
+        html += '<div class="section-label">Context Windows</div>';
+        html += renderSessions(data.sessions || []);
+
+        // Rate limits
+        html += renderLimits(data.rateLimits);
+
+        // Provider usage
+        html += renderProviderUsage(data.sessions, data.codex24h);
+
+        content.innerHTML = html;
+        lastUpdated.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      } catch (err) {
+        content.innerHTML = `
+          <div class="empty">
+            <div style="margin-bottom:6px;">⚠️ Cannot reach API</div>
+            <div style="font-size:9px;color:var(--text-dim);">localhost:8005/api/overlay/status</div>
+            <div style="font-size:9px;color:var(--text-dim);margin-top:4px;">${err.message}</div>
+          </div>
+        `;
+      }
+    }
+
+    function startPolling() {
+      fetchData();
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(fetchData, POLL_INTERVAL);
+    }
+
+    // Window controls — try multiple Tauri API paths for compatibility
+    async function windowClose() {
+      try {
+        // Tauri v2 JS API
+        if (window.__TAURI__?.window?.getCurrentWindow) {
+          await window.__TAURI__.window.getCurrentWindow().close();
+          return;
+        }
+        // Fallback: invoke Rust command
+        if (window.__TAURI__?.core?.invoke) {
+          await window.__TAURI__.core.invoke('win_close');
+          return;
+        }
+        window.close();
+      } catch(err) {
+        console.error('close err', err);
+        window.close();
+      }
+    }
+
+    async function windowMinimize() {
+      try {
+        if (window.__TAURI__?.window?.getCurrentWindow) {
+          await window.__TAURI__.window.getCurrentWindow().minimize();
+          return;
+        }
+        if (window.__TAURI__?.core?.invoke) {
+          await window.__TAURI__.core.invoke('win_minimize');
+          return;
+        }
+      } catch(err) { console.error('min err', err); }
+    }
+
+    // Drag is handled natively by data-tauri-drag-region on the titlebar div.
+    // No JS mousedown handler needed — Tauri intercepts it at the webview level.
+
+    document.getElementById('btn-close')?.addEventListener('click', windowClose);
+    document.getElementById('btn-min')?.addEventListener('click', windowMinimize);
+
+    document.getElementById('btn-refresh')?.addEventListener('click', () => {
+      const btn = document.getElementById('btn-refresh');
+      btn.classList.add('spinning');
+      fetchData().finally(() => {
+        setTimeout(() => btn.classList.remove('spinning'), 500);
+      });
+    });
+
+    // Start
+    startPolling();
+  </script>
+</body>
+</html>
