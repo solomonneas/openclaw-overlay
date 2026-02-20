@@ -1,6 +1,6 @@
 # OpenClaw Overlay 🦞
 
-Always-on-top HUD overlay for [OpenClaw](https://github.com/openclaw/openclaw) — shows context windows, rate limits, and session status at a glance.
+Always-on-top HUD overlay for [OpenClaw](https://github.com/openclaw/openclaw). Shows context windows, rate limits, and session status at a glance.
 
 ![Windows](https://img.shields.io/badge/platform-Windows-blue)
 ![Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange)
@@ -83,11 +83,11 @@ npx tauri dev
 
 ## Features
 
-- 🪟 **Always on top** — stays visible while you work
-- 🎨 **Frosted glass UI** — dark theme, translucent background
+- 🪟 **Always on top**: stays visible while you work
+- 🎨 **Frosted glass UI**: dark theme, translucent background
 - 🔄 **Auto-refresh** every 15 seconds
-- 🦞 **System tray** — minimize to tray, click to restore
-- 📊 **Color-coded bars** — green/yellow/orange/red based on usage
+- 🦞 **System tray**: minimize to tray, click to restore
+- 📊 **Color-coded bars**: green/yellow/orange/red based on usage
 
 ## Tech Stack
 
