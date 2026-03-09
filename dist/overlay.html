@@ -29,7 +29,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      background: transparent;
+      background: var(--bg);
       font-family: var(--sans);
       color: var(--text);
       overflow: hidden;
@@ -43,10 +43,8 @@
 
     .overlay {
       background: var(--bg);
-      backdrop-filter: blur(24px) saturate(1.4);
-      -webkit-backdrop-filter: blur(24px) saturate(1.4);
       border: 1px solid var(--border);
-      border-radius: 16px;
+      border-radius: 0;
       height: 100vh;
       display: flex;
       flex-direction: column;
@@ -455,60 +453,66 @@
       return html;
     }
 
-    function renderLimits(limits) {
-      if (!limits) return '';
+    function renderLimitBar(label, pctLeft, resetIn, color) {
+      if (pctLeft === undefined || pctLeft === null) return '';
+      const used = 100 - pctLeft;
+      const cls = pctLeft > 50 ? 'limit-remaining' : pctLeft > 20 ? 'limit-warn' : 'limit-danger';
+      return `
+        <div class="limit-row" style="flex-wrap:wrap;">
+          <span class="limit-label">${label}</span>
+          <span class="limit-value ${cls}">${pctLeft}% left</span>
+          ${resetIn ? `<span class="limit-reset">⏱ ${resetIn}</span>` : ''}
+          <div class="bar-track" style="width:100%;margin-top:4px;">
+            <div class="bar-fill" style="width:${used}%;background:${color};box-shadow:0 0 8px ${color}44;"></div>
+          </div>
+        </div>`;
+    }
 
+    function renderProviderLimits(name, data, color, badge) {
+      if (!data) return '';
       const rows = [];
+      // Support both flat and nested formats
+      const hourlyLeft = data.hourly?.percentLeft ?? data.hourly?.pctLeft ?? data.hourlyPctLeft;
+      const weeklyLeft = data.weekly?.percentLeft ?? data.weekly?.pctLeft ?? data.weeklyPctLeft;
+      const hourlyReset = data.hourly?.resetIn ?? data.hourly?.reset ?? data.hourlyReset;
+      const weeklyReset = data.weekly?.resetIn ?? data.weekly?.reset ?? data.weeklyReset;
 
-      // Anthropic orange for bars
-      const anthropicOrange = '#D97706';
-
-      // Support nested format: { hourly: { percentLeft, resetIn }, weekly: { percentLeft, resetIn } }
-      const hourlyLeft = limits.hourly?.percentLeft ?? limits.hourlyPctLeft;
-      const weeklyLeft = limits.weekly?.percentLeft ?? limits.weeklyPctLeft;
-      const hourlyReset = limits.hourly?.resetIn ?? limits.hourlyReset;
-      const weeklyReset = limits.weekly?.resetIn ?? limits.weeklyReset;
-
-      if (hourlyLeft !== undefined) {
-        const used = 100 - hourlyLeft;
-        const cls = hourlyLeft > 50 ? 'limit-remaining' : hourlyLeft > 20 ? 'limit-warn' : 'limit-danger';
-        rows.push(`
-          <div class="limit-row" style="flex-wrap:wrap;">
-            <span class="limit-label">Hourly</span>
-            <span class="limit-value ${cls}">${hourlyLeft}% left</span>
-            ${hourlyReset ? `<span class="limit-reset">⏱ ${hourlyReset}</span>` : ''}
-            <div class="bar-track" style="width:100%;margin-top:4px;">
-              <div class="bar-fill" style="width:${used}%;background:${anthropicOrange};box-shadow:0 0 8px ${anthropicOrange}44;"></div>
-            </div>
-          </div>
-        `);
-      }
-      if (weeklyLeft !== undefined) {
-        const used = 100 - weeklyLeft;
-        const cls = weeklyLeft > 50 ? 'limit-remaining' : weeklyLeft > 20 ? 'limit-warn' : 'limit-danger';
-        rows.push(`
-          <div class="limit-row" style="flex-wrap:wrap;">
-            <span class="limit-label">Weekly</span>
-            <span class="limit-value ${cls}">${weeklyLeft}% left</span>
-            ${weeklyReset ? `<span class="limit-reset">⏱ ${weeklyReset}</span>` : ''}
-            <div class="bar-track" style="width:100%;margin-top:4px;">
-              <div class="bar-fill" style="width:${used}%;background:${anthropicOrange};box-shadow:0 0 8px ${anthropicOrange}44;"></div>
-            </div>
-          </div>
-        `);
-      }
-
+      if (hourlyLeft !== undefined && hourlyLeft !== null) rows.push(renderLimitBar('Hourly', hourlyLeft, hourlyReset, color));
+      if (weeklyLeft !== undefined && weeklyLeft !== null) rows.push(renderLimitBar('Weekly', weeklyLeft, weeklyReset, color));
       if (rows.length === 0) return '';
 
       return `
-        <div class="section-label">Rate Limits</div>
         <div class="limits-card">
           <div class="limits-header">
-            <span class="limits-title">Anthropic</span>
-            <span class="limits-provider" style="color:${anthropicOrange};background:${anthropicOrange}20;">Max $200/mo</span>
+            <span class="limits-title">${name}</span>
+            <span class="limits-provider" style="color:${color};background:${color}20;">${badge}</span>
           </div>
           ${rows.join('')}
-        </div>
+        </div>`;
+    }
+
+    function renderLimits(limits) {
+      if (!limits) return '';
+
+      let html = '';
+
+      // Anthropic limits
+      const anthropicColor = '#D97706';
+      const anthropic = limits.anthropic || limits;
+      const anthropicHtml = renderProviderLimits('Anthropic', anthropic, anthropicColor, 'Max $200/mo');
+
+      // OpenAI limits
+      const openaiColor = '#34d399';
+      const openai = limits.openai || limits.codex;
+      const openaiHtml = renderProviderLimits('OpenAI', openai, openaiColor, 'Pro $200/mo');
+
+      if (!anthropicHtml && !openaiHtml) return '';
+
+      html += '<div class="section-label">Rate Limits</div>';
+      if (anthropicHtml) html += anthropicHtml;
+      if (openaiHtml) html += openaiHtml;
+
+      return html;
       `;
     }
 
@@ -611,32 +615,21 @@
       pollTimer = setInterval(fetchData, POLL_INTERVAL);
     }
 
-    // Window controls — try multiple Tauri API paths for compatibility
+    // Window controls — use Tauri v2 window API
     async function windowClose() {
       try {
-        // Tauri v2 JS API
-        if (window.__TAURI__?.window?.getCurrentWindow) {
-          await window.__TAURI__.window.getCurrentWindow().close();
-          return;
-        }
-        // Fallback: invoke Rust command
         if (window.__TAURI__?.core?.invoke) {
           await window.__TAURI__.core.invoke('win_close');
           return;
         }
-        window.close();
       } catch(err) {
         console.error('close err', err);
-        window.close();
       }
+      window.close();
     }
 
     async function windowMinimize() {
       try {
-        if (window.__TAURI__?.window?.getCurrentWindow) {
-          await window.__TAURI__.window.getCurrentWindow().minimize();
-          return;
-        }
         if (window.__TAURI__?.core?.invoke) {
           await window.__TAURI__.core.invoke('win_minimize');
           return;
@@ -644,11 +637,26 @@
       } catch(err) { console.error('min err', err); }
     }
 
-    // Drag is handled natively by data-tauri-drag-region on the titlebar div.
-    // No JS mousedown handler needed — Tauri intercepts it at the webview level.
+    // Button handlers
+    document.getElementById('btn-close')?.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
+    document.getElementById('btn-close')?.addEventListener('click', (e) => { e.stopPropagation(); windowClose(); });
+    document.getElementById('btn-min')?.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
+    document.getElementById('btn-min')?.addEventListener('click', (e) => { e.stopPropagation(); windowMinimize(); });
 
-    document.getElementById('btn-close')?.addEventListener('click', windowClose);
-    document.getElementById('btn-min')?.addEventListener('click', windowMinimize);
+    // Drag handler — data-tauri-drag-region doesn't work reliably on X11 frameless windows
+    // Use JS fallback: invoke start_dragging on mousedown in titlebar
+    document.querySelector('.titlebar')?.addEventListener('mousedown', async (e) => {
+      // Don't drag if clicking on buttons
+      if (e.target.closest('.titlebar-controls')) return;
+      if (e.button !== 0) return; // left click only
+      try {
+        if (window.__TAURI__?.core?.invoke) {
+          await window.__TAURI__.core.invoke('win_start_drag');
+        }
+      } catch(err) {
+        // start_dragging can fail if called at wrong time, safe to ignore
+      }
+    });
 
     document.getElementById('btn-refresh')?.addEventListener('click', () => {
       const btn = document.getElementById('btn-refresh');

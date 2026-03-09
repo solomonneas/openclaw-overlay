@@ -17,9 +17,10 @@
         "height": 480,
         "resizable": true,
         "decorations": false,
-        "transparent": true,
+        "transparent": false,
         "alwaysOnTop": true,
-        "skipTaskbar": true,
+        "skipTaskbar": false,
+        "visible": false,
         "x": 20,
         "y": 20
       },

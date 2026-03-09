@@ -115,16 +115,57 @@ async fn open_dashboard(app: tauri::AppHandle) -> Result<(), String> {
 // ── Helpers ──
 
 fn show_dashboard_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("dashboard") {
-        window.show().ok();
-        window.set_focus().ok();
+    match app.get_webview_window("dashboard") {
+        Some(window) => {
+            log::info!("Showing existing dashboard window");
+            window.show().ok();
+            window.unminimize().ok();
+            window.set_focus().ok();
+        }
+        None => {
+            log::warn!("Dashboard window not found, attempting to create");
+            if let Ok(window) = tauri::WebviewWindowBuilder::new(
+                app,
+                "dashboard",
+                tauri::WebviewUrl::App("dashboard.html".into()),
+            )
+            .title("OpenClaw Usage Tracker")
+            .inner_size(1200.0, 800.0)
+            .min_inner_size(900.0, 600.0)
+            .resizable(true)
+            .build()
+            {
+                window.show().ok();
+                window.set_focus().ok();
+            }
+        }
     }
 }
 
 fn show_overlay_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("overlay") {
-        window.show().ok();
-        window.set_focus().ok();
+    match app.get_webview_window("overlay") {
+        Some(window) => {
+            log::info!("Showing overlay window");
+            window.show().ok();
+            window.unminimize().ok();
+            window.set_focus().ok();
+        }
+        None => {
+            log::warn!("Overlay window not found, attempting to create");
+            if let Ok(window) = tauri::WebviewWindowBuilder::new(
+                app,
+                "overlay",
+                tauri::WebviewUrl::App("overlay.html".into()),
+            )
+            .title("OpenClaw")
+            .inner_size(320.0, 480.0)
+            .always_on_top(true)
+            .decorations(false)
+            .build()
+            {
+                window.show().ok();
+            }
+        }
     }
 }
 
@@ -195,14 +236,14 @@ pub fn run() {
 
             // ── Background Collectors ──
             let db_clone = db.clone();
-            tokio::spawn(async move {
-                let mut tick_1m = tokio::time::interval(Duration::from_secs(60));
-                let mut tick_5m = tokio::time::interval(Duration::from_secs(300));
-
+            tauri::async_runtime::spawn(async move {
                 // Initial collection after 5 second delay
                 tokio::time::sleep(Duration::from_secs(5)).await;
                 collectors::collect_rate_limits(&db_clone).await;
                 collectors::collect_sessions(&db_clone).await;
+
+                let mut tick_1m = tokio::time::interval(Duration::from_secs(60));
+                let mut tick_5m = tokio::time::interval(Duration::from_secs(300));
 
                 loop {
                     tokio::select! {
