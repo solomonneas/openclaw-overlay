@@ -1,9 +1,17 @@
+mod database;
+mod collectors;
+
+use database::Database;
+use std::sync::Arc;
+use std::time::Duration;
 use tauri::{
     image::Image,
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Manager, Wry,
 };
+
+// ── Existing Commands ──
 
 #[tauri::command]
 async fn fetch_overlay_status() -> Result<String, String> {
@@ -33,21 +41,126 @@ async fn win_start_drag(window: tauri::WebviewWindow) -> Result<(), String> {
     window.start_dragging().map_err(|e| e.to_string())
 }
 
+// ── New Dashboard Commands ──
+
+#[tauri::command]
+async fn fetch_dashboard_data(
+    db: tauri::State<'_, Arc<Database>>,
+    days: Option<u32>,
+) -> Result<serde_json::Value, String> {
+    let days = days.unwrap_or(14);
+    let mut result = db.get_dashboard_summary(days)?;
+
+    // Add sessions list
+    let sessions = db.get_sessions(days, "cost", 100)?;
+    if let Some(obj) = result.as_object_mut() {
+        obj.insert("sessions".to_string(), serde_json::Value::Array(sessions));
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+async fn fetch_rate_limit_history(
+    db: tauri::State<'_, Arc<Database>>,
+    provider: Option<String>,
+    hours: Option<u32>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let hours = hours.unwrap_or(24);
+    db.get_rate_limit_history(provider.as_deref(), hours)
+}
+
+#[tauri::command]
+async fn list_subscriptions(
+    db: tauri::State<'_, Arc<Database>>,
+) -> Result<Vec<serde_json::Value>, String> {
+    db.list_subscriptions()
+}
+
+#[tauri::command]
+async fn add_subscription(
+    db: tauri::State<'_, Arc<Database>>,
+    name: String,
+    cost: f64,
+    provider: Option<String>,
+) -> Result<serde_json::Value, String> {
+    db.add_subscription(&name, cost, provider.as_deref())
+}
+
+#[tauri::command]
+async fn update_subscription(
+    db: tauri::State<'_, Arc<Database>>,
+    id: i64,
+    name: Option<String>,
+    cost: Option<f64>,
+    enabled: Option<bool>,
+) -> Result<(), String> {
+    db.update_subscription(id, name.as_deref(), cost, enabled)
+}
+
+#[tauri::command]
+async fn delete_subscription(
+    db: tauri::State<'_, Arc<Database>>,
+    id: i64,
+) -> Result<(), String> {
+    db.delete_subscription(id)
+}
+
+#[tauri::command]
+async fn open_dashboard(app: tauri::AppHandle) -> Result<(), String> {
+    show_dashboard_window(&app);
+    Ok(())
+}
+
+// ── Helpers ──
+
+fn show_dashboard_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("dashboard") {
+        window.show().ok();
+        window.set_focus().ok();
+    }
+}
+
+fn show_overlay_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("overlay") {
+        window.show().ok();
+        window.set_focus().ok();
+    }
+}
+
+// ── App Entry ──
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
+            // Existing
             fetch_overlay_status,
             win_close,
             win_minimize,
             win_start_drag,
+            // New
+            fetch_dashboard_data,
+            fetch_rate_limit_history,
+            list_subscriptions,
+            add_subscription,
+            update_subscription,
+            delete_subscription,
+            open_dashboard,
         ])
         .setup(|app| {
-            let show = MenuItem::with_id(app, "show", "Show Overlay", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
+            // ── Initialize Database ──
+            let db = Database::init().expect("Failed to initialize database");
+            let db = Arc::new(db);
+            app.manage(db.clone());
 
-            // Load lobster tray icon from embedded bytes
+            // ── System Tray ──
+            let show_overlay = MenuItem::with_id(app, "show", "Show Overlay", true, None::<&str>)?;
+            let show_dashboard = MenuItem::with_id(app, "dashboard", "Open Dashboard", true, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_overlay, &show_dashboard, &separator, &quit])?;
+
             let tray_icon = Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
                 .expect("failed to load tray icon");
 
@@ -57,10 +170,10 @@ pub fn run() {
                 .menu(&menu)
                 .on_menu_event(|app: &tauri::AppHandle<Wry>, event| match event.id.as_ref() {
                     "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            window.show().ok();
-                            window.set_focus().ok();
-                        }
+                        show_overlay_window(app);
+                    }
+                    "dashboard" => {
+                        show_dashboard_window(app);
                     }
                     "quit" => {
                         app.exit(0);
@@ -75,14 +188,35 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            window.show().ok();
-                            window.set_focus().ok();
-                        }
+                        show_overlay_window(app);
                     }
                 })
                 .build(app)?;
 
+            // ── Background Collectors ──
+            let db_clone = db.clone();
+            tokio::spawn(async move {
+                let mut tick_1m = tokio::time::interval(Duration::from_secs(60));
+                let mut tick_5m = tokio::time::interval(Duration::from_secs(300));
+
+                // Initial collection after 5 second delay
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                collectors::collect_rate_limits(&db_clone).await;
+                collectors::collect_sessions(&db_clone).await;
+
+                loop {
+                    tokio::select! {
+                        _ = tick_1m.tick() => {
+                            collectors::collect_rate_limits(&db_clone).await;
+                        }
+                        _ = tick_5m.tick() => {
+                            collectors::collect_sessions(&db_clone).await;
+                        }
+                    }
+                }
+            });
+
+            // ── Logging (debug only) ──
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -90,6 +224,7 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
             Ok(())
         })
         .run(tauri::generate_context!())

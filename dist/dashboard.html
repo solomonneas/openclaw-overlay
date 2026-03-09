@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw Usage Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #1a1d23;
+    --surface: #22262e;
+    --surface2: #2a2f38;
+    --border: #333842;
+    --text: #e2e8f0;
+    --text-dim: #94a3b8;
+    --text-muted: #64748b;
+    --accent: #818cf8;
+    --accent2: #a78bfa;
+    --success: #6ee7b7;
+    --warning: #fbbf24;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Plus Jakarta Sans', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: var(--sans); overflow-x: hidden; }
+
+  @keyframes fadeInUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+  .fade-up { animation: fadeInUp 0.4s ease-out both; }
+  .s1 { animation-delay: 0.05s; } .s2 { animation-delay: 0.1s; } .s3 { animation-delay: 0.15s; }
+  .s4 { animation-delay: 0.2s; } .s5 { animation-delay: 0.25s; } .s6 { animation-delay: 0.3s; }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .card:hover { border-color: var(--accent); box-shadow: 0 0 20px rgba(129,140,248,0.08); }
+
+  .mode-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px; font-size: 12px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+    cursor: pointer; transition: all 0.2s;
+  }
+  .mode-badge.demo { background: #dbeafe; color: #1e40af; }
+  .mode-badge.live { background: #dcfce7; color: #166534; }
+  .pulse-dot { width: 6px; height: 6px; border-radius: 50%; animation: pulse 2s infinite; }
+  .mode-badge.demo .pulse-dot { background: #3b82f6; }
+  .mode-badge.live .pulse-dot { background: #22c55e; }
+  @keyframes pulse { 0%,100% { opacity:0.6; } 50% { opacity:1; } }
+
+  .session-details { max-height:0; overflow:hidden; transition: max-height 0.3s, opacity 0.3s; opacity:0; }
+  .session-details.expanded { max-height: 300px; opacity: 1; }
+
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
+
+  .sort-btn { cursor:pointer; user-select:none; }
+  .sort-btn:hover { opacity:0.8; }
+
+  .shortcut-overlay {
+    position:fixed; inset:0; z-index:9999; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,0.6); backdrop-filter:blur(8px);
+    opacity:0; pointer-events:none; transition:opacity 0.2s;
+  }
+  .shortcut-overlay.visible { opacity:1; pointer-events:all; }
+  .shortcut-key {
+    display:inline-block; background:#f1f5f9; border:1px solid #e2e8f0;
+    border-radius:6px; padding:2px 8px; font-family:var(--mono);
+    font-size:13px; font-weight:500; color:#334155; min-width:28px; text-align:center;
+  }
+</style>
+</head>
+<body>
+
+<!-- Shortcuts overlay -->
+<div id="shortcut-overlay" class="shortcut-overlay">
+  <div style="background:#fff; border-radius:16px; padding:32px 40px; max-width:420px; width:90%; box-shadow:0 25px 50px rgba(0,0,0,0.25);">
+    <h3 style="font-size:18px; font-weight:700; margin:0 0 20px; color:#1e293b;">Keyboard Shortcuts</h3>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <div style="display:flex; justify-content:space-between;"><span style="color:#475569; font-size:14px;">Toggle Demo / Live</span><span class="shortcut-key">D</span></div>
+      <div style="display:flex; justify-content:space-between;"><span style="color:#475569; font-size:14px;">Edit subscriptions</span><span class="shortcut-key">S</span></div>
+      <div style="display:flex; justify-content:space-between;"><span style="color:#475569; font-size:14px;">Refresh data</span><span class="shortcut-key">R</span></div>
+      <div style="display:flex; justify-content:space-between;"><span style="color:#475569; font-size:14px;">Show shortcuts</span><span class="shortcut-key">?</span></div>
+    </div>
+    <p style="margin:20px 0 0; font-size:12px; color:#94a3b8;">Press any key to close</p>
+  </div>
+</div>
+
+<div style="max-width:1400px; margin:0 auto; padding:32px 40px;">
+  <!-- Header -->
+  <div class="fade-up" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:32px;">
+    <div>
+      <h1 style="font-size:28px; font-weight:700; margin:0; letter-spacing:-0.5px;">🦞 Usage Tracker</h1>
+      <p style="margin:4px 0 0; font-size:14px; color:var(--text-muted);">OpenClaw token usage & cost analytics</p>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <button onclick="refreshData()" style="background:var(--surface); border:1px solid var(--border); color:var(--text-dim); border-radius:8px; padding:6px 14px; font-size:13px; cursor:pointer; font-family:var(--sans);">↻ Refresh</button>
+      <div id="mode-badge" class="mode-badge demo" onclick="toggleMode()">
+        <span class="pulse-dot"></span>
+        <span id="mode-label">Demo Mode</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Cards -->
+  <div id="summary-cards" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:16px; margin-bottom:28px;"></div>
+
+  <!-- Subscription ROI -->
+  <div id="sub-roi" style="margin-bottom:28px;"></div>
+
+  <!-- Charts Row -->
+  <div style="display:grid; grid-template-columns:2fr 1fr; gap:16px; margin-bottom:28px;">
+    <div class="card fade-up s5">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+        <h3 style="font-size:15px; font-weight:600; margin:0;">Daily Cost Trend</h3>
+        <span style="font-size:12px; color:var(--text-muted);">Last 14 days</span>
+      </div>
+      <div id="daily-chart" style="position:relative; height:240px;"></div>
+    </div>
+    <div class="card fade-up s6">
+      <h3 style="font-size:15px; font-weight:600; margin:0 0 20px;">Cost by Model</h3>
+      <div id="model-chart"></div>
+    </div>
+  </div>
+
+  <!-- Provider Summary -->
+  <div class="card fade-up" style="margin-bottom:28px;">
+    <h3 style="font-size:15px; font-weight:600; margin:0 0 16px;">Provider Summary</h3>
+    <div id="providers" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:16px;"></div>
+  </div>
+
+  <!-- Session Ranking -->
+  <div class="card fade-up">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+      <h3 style="font-size:15px; font-weight:600; margin:0;">Session Cost Ranking</h3>
+      <div style="display:flex; gap:8px;">
+        <button class="sort-btn" onclick="sortSessions('cost')" style="background:var(--surface2); border:1px solid var(--border); color:var(--text-dim); border-radius:6px; padding:4px 10px; font-size:12px;">Cost ↓</button>
+        <button class="sort-btn" onclick="sortSessions('tokens')" style="background:var(--surface2); border:1px solid var(--border); color:var(--text-dim); border-radius:6px; padding:4px 10px; font-size:12px;">Tokens ↓</button>
+        <button class="sort-btn" onclick="sortSessions('date')" style="background:var(--surface2); border:1px solid var(--border); color:var(--text-dim); border-radius:6px; padding:4px 10px; font-size:12px;">Date ↓</button>
+      </div>
+    </div>
+    <div id="sessions" style="max-height:400px; overflow-y:auto;"></div>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let isLive = false;
+let currentData = null;
+let sortKey = 'cost';
+let sortDir = 'desc';
+let subEditMode = false;
+let subscriptions = [];
+
+// ── Formatting ──
+function fmtCost(v) { return v >= 1 ? '$'+v.toFixed(2) : v >= 0.01 ? '$'+v.toFixed(3) : v > 0 ? '$'+v.toFixed(4) : '$0.00'; }
+function fmtTokens(v) { return v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toString(); }
+function fmtChange(p) { return (p >= 0 ? '+' : '') + p.toFixed(1) + '%'; }
+function fmtDate(d) { return new Date(d+'T00:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}); }
+function fmtTs(ts) { const d=new Date(ts); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}); }
+
+// ── Provider Colors ──
+const pColors = {
+  anthropic: {c:'#818cf8',l:'Anthropic'}, openai: {c:'#34d399',l:'OpenAI'},
+  ollama: {c:'#f87171',l:'Ollama'}, other: {c:'#a78bfa',l:'Other'},
+};
+
+// ── Mock Data ──
+function generateMock() {
+  const models = [
+    {name:'claude-opus-4-6',provider:'anthropic',ir:15,or:75,min:50000,max:200000,w:40},
+    {name:'claude-haiku-4-5',provider:'anthropic',ir:1,or:5,min:10000,max:50000,w:25},
+    {name:'gpt-5.3-codex',provider:'openai',ir:3,or:15,min:30000,max:80000,w:15},
+    {name:'qwen2.5:14b',provider:'ollama',ir:0,or:0,min:5000,max:30000,w:10},
+    {name:'gemma2:9b',provider:'ollama',ir:0,or:0,min:5000,max:30000,w:10},
+  ];
+  const labels = ['pipeline-build','code-review','heartbeat','debug','refactor','feature','docs',null,null];
+  const sessions = [], daily = {};
+  const now = new Date();
+
+  for (let d=13;d>=0;d--) {
+    const date = new Date(now); date.setDate(date.getDate()-d);
+    const ds = date.toISOString().split('T')[0];
+    const isWknd = date.getDay()===0||date.getDay()===6;
+    const n = isWknd ? Math.floor(Math.random()*2)+1 : Math.floor(Math.random()*3)+2;
+    daily[ds]={cost:0,tokens:0,sessions:0};
+    for (let s=0;s<n;s++) {
+      const tw=models.reduce((a,m)=>a+m.w,0); let r=Math.random()*tw, sel=models[0];
+      for (const m of models){r-=m.w;if(r<=0){sel=m;break;}}
+      const inp=Math.floor(Math.random()*(sel.max-sel.min)*0.7+sel.min*0.7);
+      const out=Math.floor(Math.random()*(sel.max-sel.min)*0.3+sel.min*0.3);
+      const cr=Math.floor(inp*Math.random()*0.3), cw=Math.floor(inp*Math.random()*0.1);
+      const ic=(inp/1e6)*sel.ir, oc=(out/1e6)*sel.or, tc=ic+oc;
+      const id=crypto.randomUUID?crypto.randomUUID():Math.random().toString(36).slice(2);
+      const ts=new Date(date); ts.setHours(Math.floor(Math.random()*14)+8,Math.floor(Math.random()*60));
+      sessions.push({id,label:labels[Math.floor(Math.random()*labels.length)],provider:sel.provider,model:sel.name,
+        inputTokens:inp,outputTokens:out,cacheReadTokens:cr,cacheWriteTokens:cw,totalTokens:inp+out,
+        inputCost:ic,outputCost:oc,totalCost:tc,lastActiveAt:ts.toISOString(),createdAt:ts.toISOString()});
+      daily[ds].cost+=tc; daily[ds].tokens+=inp+out; daily[ds].sessions++;
+    }
+  }
+  sessions.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+
+  const tt=sessions.reduce((a,s)=>a+s.totalTokens,0);
+  const tc=sessions.reduce((a,s)=>a+s.totalCost,0);
+  const cr=sessions.reduce((a,s)=>a+(s.cacheReadTokens||0),0);
+  const cw=sessions.reduce((a,s)=>a+(s.cacheWriteTokens||0),0);
+  const chr=(cr+cw)>0?(cr/(cr+cw)*100):0;
+  const am=[...new Set(sessions.map(s=>s.model))];
+
+  const ms={};
+  sessions.forEach(s=>{if(!ms[s.model])ms[s.model]={model:s.model,provider:s.provider,tokens:0,cost:0,sessions:0};
+    ms[s.model].tokens+=s.totalTokens;ms[s.model].cost+=s.totalCost;ms[s.model].sessions++;});
+
+  const ps={};
+  sessions.forEach(s=>{if(!ps[s.provider])ps[s.provider]={provider:s.provider,tokens:0,cost:0,sessions:0,modelCount:0,models:new Set()};
+    ps[s.provider].tokens+=s.totalTokens;ps[s.provider].cost+=s.totalCost;ps[s.provider].sessions++;ps[s.provider].models.add(s.model);});
+  Object.values(ps).forEach(p=>{p.modelCount=p.models.size;delete p.models;});
+
+  const da=Object.entries(daily).sort((a,b)=>a[0].localeCompare(b[0])).map(([date,d])=>({date,...d}));
+
+  return {
+    summary:{totalTokens:tt,totalCost:tc,totalSessions:sessions.length,cacheHitRate:chr,cacheRead:cr,cacheWrite:cw,
+      activeModels:am,weekOverWeek:{costChange:(Math.random()-0.3)*40,tokenChange:(Math.random()-0.3)*40,sessionChange:(Math.random()-0.3)*30}},
+    dailyData:da,modelStats:Object.values(ms).sort((a,b)=>b.cost-a.cost),
+    providerStats:Object.values(ps).sort((a,b)=>b.cost-a.cost),sessions
+  };
+}
+
+// ── Tauri Invoke Helper ──
+async function invoke(cmd, args) {
+  if (window.__TAURI__?.core?.invoke) {
+    return await window.__TAURI__.core.invoke(cmd, args || {});
+  }
+  throw new Error('No Tauri runtime');
+}
+
+// ── Data Fetching ──
+async function fetchLive() {
+  try {
+    const data = await invoke('fetch_dashboard_data', { days: 14 });
+    currentData = data;
+    renderAll();
+  } catch(e) {
+    console.warn('Live fetch failed:', e);
+    showError(e.message || e);
+  }
+}
+
+async function fetchSubscriptions() {
+  try {
+    subscriptions = await invoke('list_subscriptions');
+  } catch(e) {
+    subscriptions = [
+      {id:1,name:'Anthropic Max',monthlyCost:200,enabled:true},
+      {id:2,name:'OpenAI Plus',monthlyCost:20,enabled:true},
+    ];
+  }
+}
+
+function showError(msg) {
+  document.getElementById('summary-cards').innerHTML = `
+    <div style="grid-column:1/-1; background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.3); border-radius:12px; padding:24px; text-align:center;">
+      <div style="font-size:16px; font-weight:600; color:#fbbf24; margin-bottom:8px;">Cannot reach backend</div>
+      <div style="font-size:13px; color:var(--text-dim);">${msg}</div>
+      <div style="font-size:12px; color:var(--text-muted); margin-top:8px;">Press <kbd class="shortcut-key" style="background:var(--surface2);border-color:var(--border);color:var(--text-dim);">D</kbd> to switch to demo mode</div>
+    </div>`;
+}
+
+async function refreshData() {
+  if (isLive) { await fetchLive(); }
+  else { currentData = generateMock(); renderAll(); }
+}
+
+// ── Mode Toggle ──
+function toggleMode() {
+  isLive = !isLive;
+  const badge = document.getElementById('mode-badge');
+  const label = document.getElementById('mode-label');
+  if (isLive) { badge.className='mode-badge live'; label.textContent='Live Mode'; fetchSubscriptions().then(()=>fetchLive()); }
+  else { badge.className='mode-badge demo'; label.textContent='Demo Mode'; currentData=generateMock(); renderAll(); }
+}
+
+// ── Render Summary Cards ──
+function renderSummary() {
+  const d = currentData; if(!d) return;
+  const s = d.summary;
+  const wow = s.weekOverWeek || {};
+  const cards = [
+    {label:'Total Tokens',value:fmtTokens(s.totalTokens),change:wow.tokenChange},
+    {label:'Total Cost',value:fmtCost(s.totalCost),change:wow.costChange},
+    {label:'Sessions',value:s.totalSessions,change:wow.sessionChange},
+    {label:'Cache Hit Rate',value:(s.cacheHitRate||0).toFixed(1)+'%',change:null,sub:`${fmtTokens(s.cacheRead||0)} read · ${fmtTokens(s.cacheWrite||0)} write`},
+    {label:'Active Models',value:(s.activeModels||[]).length,change:null},
+  ];
+
+  document.getElementById('summary-cards').innerHTML = cards.map((c,i) => {
+    const ch = c.change !== null ? `<div style="font-size:12px; color:${c.change>=0?'#fbbf24':'var(--success)'}; margin-top:8px;">${fmtChange(c.change)} <span style="color:var(--text-muted)">vs last week</span></div>` : '';
+    return `<div class="card fade-up s${i+1}">
+      <div style="font-size:12px; font-weight:500; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:12px;">${c.label}</div>
+      <div style="font-size:28px; font-weight:700; letter-spacing:-0.5px;">${c.value}</div>
+      ${c.sub?`<div style="font-size:11px; color:var(--text-muted); margin-top:4px;">${c.sub}</div>`:''}
+      ${ch}</div>`;
+  }).join('');
+}
+
+// ── Render Subscription ROI ──
+function renderSubROI() {
+  const d = currentData; if(!d) return;
+  const monthlySub = subscriptions.filter(s=>s.enabled).reduce((a,s)=>a+(s.monthlyCost||s.monthly_cost||0),0);
+  const apiCost = d.summary.totalCost;
+  const savings = apiCost - monthlySub;
+  const roi = monthlySub > 0 ? apiCost / monthlySub : 0;
+  const roiLabel = roi >= 1 ? roi.toFixed(1)+'x' : (roi*100).toFixed(0)+'%';
+  const pos = savings > 0;
+  const color = pos ? 'var(--success)' : '#fbbf24';
+
+  let subLines = subscriptions.map((s,i) => {
+    if (subEditMode) {
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <input type="checkbox" ${s.enabled?'checked':''} onchange="toggleSub(${s.id||i})">
+        <input type="text" value="${s.name}" onchange="updateSubName(${s.id||i},this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;color:var(--text);width:140px;">
+        <span style="font-size:12px;color:var(--text-muted);">$</span>
+        <input type="number" value="${s.monthlyCost||s.monthly_cost||0}" onchange="updateSubCost(${s.id||i},this.value)" style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:4px 8px;font-size:12px;color:var(--text);width:80px;">
+      </div>`;
+    }
+    return `<div style="display:flex;justify-content:space-between;padding:4px 0;opacity:${s.enabled?1:0.4};">
+      <span style="font-size:13px;">${s.name}</span>
+      <span style="font-size:13px;font-weight:600;">$${(s.monthlyCost||s.monthly_cost||0).toFixed(0)}/mo</span>
+    </div>`;
+  }).join('');
+
+  document.getElementById('sub-roi').innerHTML = `
+    <div class="card fade-up">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:15px;font-weight:600;">Subscription ROI</span>
+          <span style="font-size:11px;padding:2px 8px;border-radius:4px;background:${color}18;color:${color};">${pos?'Saving':'Over budget'}</span>
+        </div>
+        <button onclick="subEditMode=!subEditMode;renderSubROI()" style="background:none;border:1px solid var(--text-muted);border-radius:6px;padding:4px 10px;font-size:11px;color:var(--text-muted);cursor:pointer;">${subEditMode?'Done':'Edit'}</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:20px;">
+        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Monthly Subscription</div><div style="font-size:24px;font-weight:700;">$${monthlySub.toFixed(0)}</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">API-Rate Equivalent</div><div style="font-size:24px;font-weight:700;">${fmtCost(apiCost)}</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Net Savings</div><div style="font-size:24px;font-weight:700;color:${color};">${pos?'+':''}${fmtCost(Math.abs(savings))}</div><div style="font-size:11px;color:${color};margin-top:2px;">${roiLabel} return</div></div>
+      </div>
+      <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;margin-bottom:16px;">
+        <div style="height:100%;width:${Math.min((monthlySub/Math.max(apiCost,monthlySub,1))*100,100)}%;background:var(--accent);border-radius:4px;transition:width 0.6s;"></div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:16px;">
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">Plans</div>
+        ${subLines}
+      </div>
+    </div>`;
+}
+
+// Subscription edit helpers (demo mode only; live mode would call Tauri commands)
+function toggleSub(id) { const s=subscriptions.find(x=>(x.id||0)===id); if(s)s.enabled=!s.enabled; renderSubROI(); }
+function updateSubName(id,v) { const s=subscriptions.find(x=>(x.id||0)===id); if(s)s.name=v; }
+function updateSubCost(id,v) { const s=subscriptions.find(x=>(x.id||0)===id); if(s){s.monthlyCost=parseFloat(v)||0;s.monthly_cost=s.monthlyCost;} renderSubROI(); }
+
+// ── Render Daily Chart ──
+function renderDailyChart() {
+  const container = document.getElementById('daily-chart');
+  if (!container || !currentData) return;
+  const daily = currentData.dailyData || [];
+  if (!daily.length) { container.innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--text-muted);">No data</div>'; return; }
+
+  const w=container.clientWidth, h=container.clientHeight||240;
+  const pad={top:20,right:20,bottom:36,left:60};
+  const cw=w-pad.left-pad.right, ch=h-pad.top-pad.bottom;
+  const maxC=Math.max(...daily.map(d=>d.cost),0.01);
+
+  const pts=daily.map((d,i)=>({x:pad.left+(i/(daily.length-1))*cw, y:pad.top+ch-(d.cost/maxC)*ch, d}));
+  let line=`M ${pts[0].x} ${pts[0].y}`;
+  for(let i=1;i<pts.length;i++){
+    const cx1=pts[i-1].x+(pts[i].x-pts[i-1].x)*0.4, cy1=pts[i-1].y;
+    const cx2=pts[i].x-(pts[i].x-pts[i-1].x)*0.4, cy2=pts[i].y;
+    line+=` C ${cx1} ${cy1}, ${cx2} ${cy2}, ${pts[i].x} ${pts[i].y}`;
+  }
+  const area=line+` L ${pts[pts.length-1].x} ${pad.top+ch} L ${pts[0].x} ${pad.top+ch} Z`;
+
+  let grid='';
+  for(let i=0;i<=4;i++){
+    const y=pad.top+(i/4)*ch, v=maxC*(1-i/4);
+    grid+=`<line x1="${pad.left}" y1="${y}" x2="${w-pad.right}" y2="${y}" stroke="var(--border)" stroke-width="0.5"/>`;
+    grid+=`<text x="${pad.left-8}" y="${y+4}" text-anchor="end" fill="var(--text-muted)" font-size="11">${fmtCost(v)}</text>`;
+  }
+  let xl='';
+  const every=daily.length>10?2:1;
+  daily.forEach((d,i)=>{if(i%every===0){const x=pad.left+(i/(daily.length-1))*cw; xl+=`<text x="${x}" y="${h-8}" text-anchor="middle" fill="var(--text-muted)" font-size="10">${fmtDate(d.date)}</text>`;}});
+
+  let dots='';
+  pts.forEach((p,i)=>{dots+=`<circle cx="${p.x}" cy="${p.y}" r="4" fill="var(--accent2)" opacity="0.8" style="cursor:pointer;" data-i="${i}"/>`; });
+
+  container.innerHTML=`
+    <svg width="${w}" height="${h}">
+      <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(129,140,248,0.25)"/><stop offset="100%" stop-color="rgba(129,140,248,0.02)"/></linearGradient></defs>
+      ${grid}<path d="${area}" fill="url(#ag)"/><path d="${line}" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round"/>${dots}${xl}
+    </svg>`;
+}
+
+// ── Render Model Chart ──
+function renderModelChart() {
+  const el=document.getElementById('model-chart'); if(!el||!currentData) return;
+  const models=currentData.modelStats||[];
+  const maxT=Math.max(...models.map(m=>m.tokens),1);
+  const totalC=models.reduce((a,m)=>a+m.cost,0);
+  const mColors={'claude-opus-4-6':'#818cf8','claude-haiku-4-5':'#a78bfa','gpt-5.3-codex':'#34d399','gpt-5.2':'#34d399','qwen2.5:14b':'#f87171','gemma2:9b':'#fb923c'};
+
+  el.innerHTML=models.map((m,i)=>{
+    const pct=m.tokens/maxT*100;
+    const c=mColors[m.model]||'#94a3b8';
+    const cp=totalC>0?(m.cost/totalC*100).toFixed(1):'0.0';
+    return `<div style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="display:flex;align-items:center;gap:8px;"><div style="width:10px;height:10px;border-radius:3px;background:${c};"></div><span style="font-size:13px;font-weight:500;">${m.model}</span></div>
+        <span style="font-size:12px;color:var(--text-muted);">${fmtCost(m.cost)} (${cp}%)</span>
+      </div>
+      <div style="height:8px;background:var(--surface2);border-radius:4px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${c};border-radius:4px;transition:width 0.8s;"></div></div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${fmtTokens(m.tokens)} tokens · ${m.sessions} sessions</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Render Providers ──
+function renderProviders() {
+  const el=document.getElementById('providers'); if(!el||!currentData) return;
+  el.innerHTML=(currentData.providerStats||[]).map(p=>{
+    const pc=pColors[p.provider]||pColors.other;
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <div style="width:8px;height:8px;border-radius:4px;background:${pc.c};"></div>
+        <span style="font-size:14px;font-weight:600;text-transform:capitalize;">${pc.l}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div><div style="font-size:11px;color:var(--text-muted);">Cost</div><div style="font-size:16px;font-weight:600;">${fmtCost(p.cost)}</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);">Tokens</div><div style="font-size:16px;font-weight:600;">${fmtTokens(p.tokens)}</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);">Sessions</div><div style="font-size:14px;font-weight:500;">${p.sessions}</div></div>
+        <div><div style="font-size:11px;color:var(--text-muted);">Models</div><div style="font-size:14px;font-weight:500;">${p.modelCount||'?'}</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Render Sessions ──
+function renderSessions() {
+  const el=document.getElementById('sessions'); if(!el||!currentData) return;
+  let ss=[...(currentData.sessions||[])];
+  if(sortKey==='cost') ss.sort((a,b)=>sortDir==='desc'?(b.totalCost||0)-(a.totalCost||0):(a.totalCost||0)-(b.totalCost||0));
+  else if(sortKey==='tokens') ss.sort((a,b)=>sortDir==='desc'?(b.totalTokens||0)-(a.totalTokens||0):(a.totalTokens||0)-(b.totalTokens||0));
+  else ss.sort((a,b)=>sortDir==='desc'?new Date(b.createdAt||0)-new Date(a.createdAt||0):new Date(a.createdAt||0)-new Date(b.createdAt||0));
+
+  el.innerHTML=ss.slice(0,50).map(s=>{
+    const pc=pColors[s.provider]||pColors.other;
+    const name=s.label||s.id?.slice(0,8)||'?';
+    return `<div onclick="this.nextElementSibling.classList.toggle('expanded')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);cursor:pointer;transition:background 0.15s;" onmouseenter="this.style.background='var(--surface2)'" onmouseleave="this.style.background='transparent'">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0;">
+        <div style="width:8px;height:8px;border-radius:4px;background:${pc.c};flex-shrink:0;"></div>
+        <div style="min-width:0;"><div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
+        <div style="font-size:11px;color:var(--text-muted);">${fmtTs(s.createdAt||s.lastActiveAt||'')} · ${s.model}</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:24px;flex-shrink:0;">
+        <span style="font-size:12px;color:var(--text-dim);">${fmtTokens(s.totalTokens||0)}</span>
+        <span style="font-size:13px;font-weight:600;color:var(--accent);min-width:60px;text-align:right;">${fmtCost(s.totalCost||0)}</span>
+      </div>
+    </div>
+    <div class="session-details" style="padding:0 16px;background:var(--surface2);border-bottom:1px solid var(--border);">
+      <div style="padding:12px 0;display:grid;grid-template-columns:repeat(4,1fr);gap:12px;font-size:12px;">
+        <div><span style="color:var(--text-muted);">Input:</span> ${fmtTokens(s.inputTokens||0)}</div>
+        <div><span style="color:var(--text-muted);">Output:</span> ${fmtTokens(s.outputTokens||0)}</div>
+        <div><span style="color:var(--text-muted);">Cache R:</span> ${fmtTokens(s.cacheReadTokens||0)}</div>
+        <div><span style="color:var(--text-muted);">Cache W:</span> ${fmtTokens(s.cacheWriteTokens||0)}</div>
+        <div><span style="color:var(--text-muted);">Provider:</span> <span style="text-transform:capitalize;">${s.provider}</span></div>
+        <div><span style="color:var(--text-muted);">In Cost:</span> ${fmtCost(s.inputCost||0)}</div>
+        <div><span style="color:var(--text-muted);">Out Cost:</span> ${fmtCost(s.outputCost||0)}</div>
+        <div><span style="color:var(--text-muted);">ID:</span> ${(s.id||'').slice(0,12)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function sortSessions(key) { if(sortKey===key)sortDir=sortDir==='desc'?'asc':'desc'; else{sortKey=key;sortDir='desc';} renderSessions(); }
+
+// ── Render All ──
+function renderAll() { renderSummary(); renderSubROI(); renderDailyChart(); renderModelChart(); renderProviders(); renderSessions(); }
+
+// ── Keyboard Shortcuts ──
+document.addEventListener('keydown', e => {
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  const ov=document.getElementById('shortcut-overlay');
+  if(e.key==='Escape'){ov.classList.remove('visible');return;}
+  if(ov.classList.contains('visible')){ov.classList.remove('visible');return;}
+  if(e.key==='?'){e.preventDefault();ov.classList.add('visible');return;}
+  if(e.key==='d'||e.key==='D'){e.preventDefault();toggleMode();return;}
+  if(e.key==='s'||e.key==='S'){e.preventDefault();subEditMode=!subEditMode;renderSubROI();return;}
+  if(e.key==='r'||e.key==='R'){e.preventDefault();refreshData();return;}
+});
+
+// ── Resize ──
+let resizeT;
+window.addEventListener('resize',()=>{clearTimeout(resizeT);resizeT=setTimeout(renderDailyChart,200);});
+
+// ── Init ──
+subscriptions=[{id:1,name:'Anthropic Max',monthlyCost:200,enabled:true},{id:2,name:'OpenAI Plus',monthlyCost:20,enabled:true}];
+currentData = generateMock();
+renderAll();
+</script>
+</body>
+</html>
