@@ -470,16 +470,18 @@
 
     function renderProviderLimits(name, data, color, badge) {
       if (!data) return '';
-      const rows = [];
-      // Support both flat and nested formats
-      const hourlyLeft = data.hourly?.percentLeft ?? data.hourly?.pctLeft ?? data.hourlyPctLeft;
-      const weeklyLeft = data.weekly?.percentLeft ?? data.weekly?.pctLeft ?? data.weeklyPctLeft;
-      const hourlyReset = data.hourly?.resetIn ?? data.hourly?.reset ?? data.hourlyReset;
-      const weeklyReset = data.weekly?.resetIn ?? data.weekly?.reset ?? data.weeklyReset;
 
-      if (hourlyLeft !== undefined && hourlyLeft !== null) rows.push(renderLimitBar('Hourly', hourlyLeft, hourlyReset, color));
-      if (weeklyLeft !== undefined && weeklyLeft !== null) rows.push(renderLimitBar('Weekly', weeklyLeft, weeklyReset, color));
-      if (rows.length === 0) return '';
+      // Monthly budget view
+      const cost = data.cost ?? 0;
+      const projected = data.projected ?? 0;
+      const tokens = data.tokens ?? 0;
+      const sessions = data.sessions ?? 0;
+      const weeklyLabel = data.weekly?.label || '';
+      const pctUsed = data.weekly ? (100 - (data.weekly.percentLeft ?? 100)) : 0;
+      const resetIn = data.weekly?.resetIn || data.hourly?.resetIn || '';
+
+      const barWidth = Math.min(100, pctUsed);
+      const projWidth = Math.min(100, projected > 0 ? (projected / 200) * 100 : 0);
 
       return `
         <div class="limits-card">
@@ -487,7 +489,19 @@
             <span class="limits-title">${name}</span>
             <span class="limits-provider" style="color:${color};background:${color}20;">${badge}</span>
           </div>
-          ${rows.join('')}
+          <div class="limit-row" style="flex-wrap:wrap;">
+            <span class="limit-label">Budget</span>
+            <span class="limit-value" style="color:${color};font-weight:600;">$${cost.toFixed(2)} <span style="color:var(--text-dim);font-weight:400;">/ $200</span></span>
+            ${resetIn ? `<span class="limit-reset">⏱ ${resetIn}</span>` : ''}
+            <div class="bar-track" style="width:100%;margin-top:4px;position:relative;">
+              ${projWidth > barWidth ? `<div style="position:absolute;height:100%;width:${projWidth}%;background:${color}22;border-radius:4px;"></div>` : ''}
+              <div class="bar-fill" style="width:${barWidth}%;background:${color};box-shadow:0 0 8px ${color}44;"></div>
+            </div>
+          </div>
+          <div class="limit-row">
+            <span class="limit-label" style="font-size:9px;">Projected</span>
+            <span class="limit-reset" style="font-size:9px;">~$${projected.toFixed(0)}/mo · ${formatTokens(tokens)} tokens · ${sessions} sessions</span>
+          </div>
         </div>`;
     }
 
