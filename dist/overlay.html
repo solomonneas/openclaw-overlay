@@ -524,16 +524,16 @@
       const anthropic = limits.anthropic || limits;
       const anthropicHtml = renderProviderLimits('Anthropic', anthropic, anthropicColor, 'Max $200/mo');
 
-      // OpenAI limits
-      const openaiColor = '#34d399';
-      const openai = limits.openai || limits.codex;
-      const openaiHtml = renderProviderLimits('OpenAI', openai, openaiColor, 'Pro $200/mo');
+      // Codex limits
+      const codexColor = '#34d399';
+      const codex = limits.codex || limits.openai;
+      const codexHtml = renderProviderLimits('Codex', codex, codexColor, 'Pro $200/mo');
 
-      if (!anthropicHtml && !openaiHtml) return '';
+      if (!anthropicHtml && !codexHtml) return '';
 
       html += '<div class="section-label">Rate Limits</div>';
       if (anthropicHtml) html += anthropicHtml;
-      if (openaiHtml) html += openaiHtml;
+      if (codexHtml) html += codexHtml;
 
       return html;
     }
