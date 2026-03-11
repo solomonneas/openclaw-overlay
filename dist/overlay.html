@@ -372,6 +372,11 @@
       return 'critical';
     }
 
+    function esc(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+    }
+
     function formatTokens(n) {
       if (!n && n !== 0) return '--';
       if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
@@ -399,8 +404,8 @@
           <div class="session-top">
             <div class="session-name">
               <span class="status-dot dot-online"></span>
-              ${s.label || 'unknown'}
-              <span class="session-model">${modelShort}</span>
+              ${esc(s.label || 'unknown')}
+              <span class="session-model">${esc(modelShort)}</span>
             </div>
             <span class="session-pct pct-${cls}">${pct}%</span>
           </div>

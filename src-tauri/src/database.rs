@@ -111,34 +111,47 @@ impl Database {
 
     pub fn get_rate_limit_history(&self, provider: Option<&str>, hours: u32) -> Result<Vec<serde_json::Value>, String> {
         let conn = self.conn.lock().map_err(|e| e.to_string())?;
-        let query = if let Some(p) = provider {
-            format!(
+        let hours_str = format!("-{} hours", hours);
+        let (query, has_provider) = if provider.is_some() {
+            (
                 "SELECT provider, limit_type, used_pct, resets_at, captured_at
                  FROM rate_limit_snapshots
-                 WHERE provider = '{}' AND captured_at >= datetime('now', '-{} hours')
-                 ORDER BY captured_at DESC",
-                p, hours
+                 WHERE provider = ?1 AND captured_at >= datetime('now', ?2)
+                 ORDER BY captured_at DESC".to_string(),
+                true,
             )
         } else {
-            format!(
+            (
                 "SELECT provider, limit_type, used_pct, resets_at, captured_at
                  FROM rate_limit_snapshots
-                 WHERE captured_at >= datetime('now', '-{} hours')
-                 ORDER BY captured_at DESC",
-                hours
+                 WHERE captured_at >= datetime('now', ?1)
+                 ORDER BY captured_at DESC".to_string(),
+                false,
             )
         };
 
         let mut stmt = conn.prepare(&query).map_err(|e| e.to_string())?;
-        let rows = stmt.query_map([], |row| {
-            Ok(serde_json::json!({
-                "provider": row.get::<_, String>(0)?,
-                "limitType": row.get::<_, String>(1)?,
-                "usedPct": row.get::<_, f64>(2)?,
-                "resetsAt": row.get::<_, String>(3)?,
-                "capturedAt": row.get::<_, String>(4)?,
-            }))
-        }).map_err(|e| e.to_string())?;
+        let rows = if has_provider {
+            stmt.query_map(params![provider.unwrap(), hours_str], |row| {
+                Ok(serde_json::json!({
+                    "provider": row.get::<_, String>(0)?,
+                    "limitType": row.get::<_, String>(1)?,
+                    "usedPct": row.get::<_, f64>(2)?,
+                    "resetsAt": row.get::<_, String>(3)?,
+                    "capturedAt": row.get::<_, String>(4)?,
+                }))
+            }).map_err(|e| e.to_string())?
+        } else {
+            stmt.query_map(params![hours_str], |row| {
+                Ok(serde_json::json!({
+                    "provider": row.get::<_, String>(0)?,
+                    "limitType": row.get::<_, String>(1)?,
+                    "usedPct": row.get::<_, f64>(2)?,
+                    "resetsAt": row.get::<_, String>(3)?,
+                    "capturedAt": row.get::<_, String>(4)?,
+                }))
+            }).map_err(|e| e.to_string())?
+        };
 
         let mut results = Vec::new();
         for row in rows {
