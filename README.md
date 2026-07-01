@@ -2,9 +2,9 @@
 
 Always-on-top HUD overlay for [OpenClaw](https://github.com/openclaw/openclaw). Shows context windows, rate limits, and session status at a glance.
 
-![Windows](https://img.shields.io/badge/platform-Windows-blue)
-![Tauri](https://img.shields.io/badge/built%20with-Tauri%202-orange)
-![License](https://img.shields.io/badge/license-MIT-green)
+![Windows](https://shieldcn.dev/badge/platform-Windows-blue.svg)
+![Tauri](https://shieldcn.dev/badge/built%20with-Tauri%202-orange.svg)
+![License](https://shieldcn.dev/badge/license-MIT-green.svg)
 
 ## What it does
 
